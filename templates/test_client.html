@@ -1,11 +1,71 @@
 <!DOCTYPE html>
 <html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Bangla Live ASR</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            margin: 40px;
+            background: #f5f5f5;
+        }
+
+        button {
+            padding: 12px 20px;
+            margin-right: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #partial {
+            margin-top: 30px;
+            font-size: 24px;
+            color: #666;
+        }
+
+        #final {
+            margin-top: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #111;
+        }
+
+        .status {
+            margin-top: 15px;
+            color: green;
+        }
+        #translation {
+            margin-top: 10px;
+            font-size: 22px;
+            color: #1565c0;
+        }
+
+        #final_translation {
+            margin-top: 10px;
+            font-size: 24px;
+            color: #0d47a1;
+        }
+    </style>
+</head>
+
 <body>
 
-<h2>Bangla Live ASR (REAL PCM STREAM)</h2>
+<h2>🎙️ Bangla Live ASR</h2>
 
 <button onclick="start()">Start</button>
 <button onclick="stop()">Stop</button>
+
+<div class="status" id="status"></div>
+
+<div id="partial"></div>
+<div id="translation"></div>
+
+<hr>
+
+<div id="final"></div>
+<div id="final_translation"></div>
 
 <script>
 
@@ -14,7 +74,17 @@ let audioContext;
 let processor;
 let source;
 
+const partialDiv = document.getElementById("partial");
+const translationDiv = document.getElementById("translation");
+
+const finalDiv = document.getElementById("final");
+const finalTranslationDiv = document.getElementById("final_translation");
+
+const statusDiv = document.getElementById("status");
+
 function start() {
+
+    statusDiv.innerHTML = "🟢 Listening...";
 
     ws = new WebSocket("ws://127.0.0.1:8000/ws/asr/");
 
@@ -23,59 +93,115 @@ function start() {
     };
 
     ws.onmessage = (msg) => {
-        
+
         let data = JSON.parse(msg.data);
 
-        if (data.partial) {
-            console.log("🟡 Partial:", data.partial);
+        // LIVE BANGLA
+        if (data.partial !== undefined) {
+
+            partialDiv.innerHTML =
+                "🟡 বাংলা: " + data.partial;
         }
 
-        if (data.final) {
-            console.log("🟢 Final:", data.final);
+        // LIVE ENGLISH
+        if (data.translation !== undefined) {
+
+            translationDiv.innerHTML =
+                "🔵 English: " + data.translation;
+        }
+
+        // FINAL BANGLA
+        if (data.final !== undefined) {
+
+            finalDiv.innerHTML +=
+                "<p>🟢 বাংলা: " + data.final + "</p>";
+
+            partialDiv.innerHTML = "";
+        }
+
+        // FINAL ENGLISH
+        if (data.final_translation !== undefined) {
+
+            finalTranslationDiv.innerHTML +=
+                "<p>🔵 English: " +
+                data.final_translation +
+                "</p>";
+
+            translationDiv.innerHTML = "";
         }
     };
 
-    navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
+    navigator.mediaDevices.getUserMedia({
+        audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        }
+    })
+    .then(stream => {
 
-            audioContext = new AudioContext({ sampleRate: 16000 });
-
-            source = audioContext.createMediaStreamSource(stream);
-
-            processor = audioContext.createScriptProcessor(4096, 1, 1);
-
-            source.connect(processor);
-            processor.connect(audioContext.destination);
-
-            processor.onaudioprocess = (e) => {
-
-                if (!ws || ws.readyState !== 1) return;
-
-                let input = e.inputBuffer.getChannelData(0);
-
-                // Convert Float32Array → ArrayBuffer
-                let buffer = new Float32Array(input);
-
-                ws.send(buffer.buffer);
-            };
+        audioContext = new AudioContext({
+            sampleRate: 16000
         });
+
+        source = audioContext.createMediaStreamSource(stream);
+
+        // LOW CPU BUFFER
+        processor = audioContext.createScriptProcessor(
+            2048,
+            1,
+            1
+        );
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        processor.onaudioprocess = (e) => {
+
+            if (!ws || ws.readyState !== 1) return;
+
+            let input = e.inputBuffer.getChannelData(0);
+
+            // SIMPLE VAD
+            let volume = 0;
+
+            for (let i = 0; i < input.length; i++) {
+                volume += Math.abs(input[i]);
+            }
+
+            volume = volume / input.length;
+
+            // Ignore silence
+            if (volume < 0.01) return;
+
+            let buffer = new Float32Array(input);
+
+            ws.send(buffer.buffer);
+        };
+    });
 }
 
 function stop() {
 
+    statusDiv.innerHTML = "🔴 Stopped";
+
     if (processor) processor.disconnect();
+
     if (source) source.disconnect();
+
+    if (audioContext) audioContext.close();
 
     if (ws && ws.readyState === 1) {
 
-        ws.send(JSON.stringify({ event: "end" }));
+        ws.send(JSON.stringify({
+            event: "end"
+        }));
 
         setTimeout(() => {
             ws.close();
         }, 300);
     }
-
-    console.log("Stopped");
 }
 
 </script>

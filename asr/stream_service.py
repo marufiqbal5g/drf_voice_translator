@@ -17,9 +17,12 @@ recognizer = sherpa_onnx.OnlineRecognizer.from_transducer(
     encoder=os.path.join(MODEL_DIR, "encoder-epoch-99-avg-1.int8.onnx"),
     decoder=os.path.join(MODEL_DIR, "decoder-epoch-99-avg-1.onnx"),
     joiner=os.path.join(MODEL_DIR, "joiner-epoch-99-avg-1.int8.onnx"),
-    num_threads=2,
+
+    num_threads=2,          # good for Celeron
     sample_rate=16000,
     feature_dim=80,
+
+    enable_endpoint_detection=True
 )
 
 
