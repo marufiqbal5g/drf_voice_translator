@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>Bangla Live ASR (REAL PCM STREAM)</h2>
+
+<button onclick="start()">Start</button>
+<button onclick="stop()">Stop</button>
+
+<script>
+
+let ws;
+let audioContext;
+let processor;
+let source;
+
+function start() {
+
+    ws = new WebSocket("ws://127.0.0.1:8000/ws/asr/");
+
+    ws.onopen = () => {
+        console.log("WebSocket connected");
+    };
+
+    ws.onmessage = (msg) => {
+        
+        let data = JSON.parse(msg.data);
+
+        if (data.partial) {
+            console.log("🟡 Partial:", data.partial);
+        }
+
+        if (data.final) {
+            console.log("🟢 Final:", data.final);
+        }
+    };
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+
+            audioContext = new AudioContext({ sampleRate: 16000 });
+
+            source = audioContext.createMediaStreamSource(stream);
+
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = (e) => {
+
+                if (!ws || ws.readyState !== 1) return;
+
+                let input = e.inputBuffer.getChannelData(0);
+
+                // Convert Float32Array → ArrayBuffer
+                let buffer = new Float32Array(input);
+
+                ws.send(buffer.buffer);
+            };
+        });
+}
+
+function stop() {
+
+    if (processor) processor.disconnect();
+    if (source) source.disconnect();
+
+    if (ws && ws.readyState === 1) {
+
+        ws.send(JSON.stringify({ event: "end" }));
+
+        setTimeout(() => {
+            ws.close();
+        }, 300);
+    }
+
+    console.log("Stopped");
+}
+
+</script>
+
+</body>
+</html>

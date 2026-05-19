@@ -1,3 +1,5 @@
+from django.shortcuts import render
+
 import os
 
 from rest_framework.views import APIView
@@ -42,3 +44,8 @@ class AudioToTextAPIView(APIView):
         return Response({
             "text": text
         })
+
+
+
+def test_page(request):
+    return render(request, "test_client.html")
